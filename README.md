@@ -40,7 +40,8 @@ Precedence runs form override, then folder override, then tier.
 
 ## What you get
 
-`report.html` opens as a local file and gives you three views.
+`report.html` opens as a local file. A strip of summary tiles sits across the
+top, and below it are four views.
 
 **People.** Every account with its tier, MFA state, override count, denial count,
 no-op count, and how many forms it can actually reach. Expand a row to see the
@@ -68,6 +69,61 @@ AI assistant connections, org-scoped API keys, integrations that have never
 acted, and integrations idle 90 days or more.
 
 Any view exports to CSV.
+
+## Summary tiles
+
+The strip counts accounts unless a tile says otherwise. `Accounts` is the roster
+total. The last four tiles appear only when the snapshot includes the audit log
+or the integration inventory.
+
+**Org-wide by tier.** Accounts at Administrator or Owner. These reach every active
+form in the org without a single grant being recorded. The only way to take
+anything away from one of them is a denial.
+
+**With overrides.** Accounts with at least one folder or form override, meaning
+access on a specific folder or form that differs from the account's tier.
+
+**With denials.** Accounts holding at least one `NO` override on a tier that would
+otherwise grant access. A denial is a deliberate carve-out. Confirm each one was
+intentional.
+
+**Reaches nothing.** Accounts that can sign in but resolve to zero forms after tier
+and overrides are applied. Service accounts are counted here; the matching finding
+excludes them. These are deprovisioning candidates, and removing them frees seats.
+
+**MFA off.** Accounts where `MfaEnabled` is false. The tile turns red when any of
+them reach at least one form.
+
+**Service accounts.** Accounts whose email matches the service-account pattern.
+This is a regex on the address, not a flag from Cognito, so read the list before
+quoting the number.
+
+**No-op overrides.** Override rows, not accounts. These restate access the account
+already has from its tier or from a folder override above it. Removing them changes
+nothing and shortens the matrix.
+
+**Stale overrides.** Override rows, not accounts. These point at archived or deleted
+forms and folders. They grant nothing today. Cleanup, not risk.
+
+**Never signed in.** Accounts that reach at least one form, aren't service accounts,
+and have no sign-in event in the log window. Sign-in events appear to fire only on
+fresh authentication, so an account can use the product without producing one. Read
+this as "no recorded sign-in" and check the account's total event count before
+acting on it.
+
+**Idle 90+ days.** Accounts that reach at least one form, aren't service accounts,
+and whose last recorded sign-in is 90 or more days old. The log only goes back so
+far, so an idle figure is a floor. An account showing the full window may have been
+idle much longer.
+
+**Integrations.** Every connection in the org, taken from `/svc/integrations/list-view`.
+This is the inventory, not an activity list, so connections that have never acted
+are included.
+
+**AI connections.** Integrations that connect an AI assistant app such as ChatGPT or
+Claude. These are OAuth connections, so each one runs as the account that connected
+it and reads whatever that account can read. The tile turns red when the count is
+above zero.
 
 ## Why "forms reachable" is the column to read
 
