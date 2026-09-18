@@ -53,9 +53,15 @@ aside h2{font-size:12px;font-weight:600;margin:0 0 10px;color:var(--ink-soft)}
 aside h2:not(:first-child){margin-top:20px}
 aside label{display:flex;gap:8px;align-items:center;padding:3px 0;cursor:pointer}
 aside input[type=search]{width:100%;padding:7px 9px;border:1px solid var(--line);font:inherit}
-.stat{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;padding:2px 0;border-bottom:1px solid var(--line-soft)}
+.stat{position:relative;display:flex;justify-content:space-between;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;padding:2px 0;border-bottom:1px solid var(--line-soft)}
 .stat b{font-weight:500}
 .stat.hot b{color:var(--alert)}
+.stat .k{display:flex;align-items:center;gap:5px;min-width:0}
+.info{flex:none;width:13px;height:13px;padding:0;border:0;border-radius:50%;background:var(--line);color:var(--surface);font:500 9px/13px var(--sans);cursor:pointer}
+.info:hover,.stat.pinned .info{background:var(--accent)}
+.tip{display:none;position:absolute;left:calc(100% + 12px);top:-8px;z-index:30;width:258px;padding:9px 11px;background:var(--ink);color:#eef2f5;font-family:var(--sans);font-size:12px;line-height:1.45;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.tip::before{content:"";position:absolute;left:-5px;top:13px;border:5px solid transparent;border-left:0;border-right-color:var(--ink)}
+.stat:hover .tip,.stat.pinned .tip{display:block}
 
 section.panel{background:var(--surface);border:1px solid var(--line);min-height:400px}
 table{width:100%;border-collapse:collapse}
@@ -109,11 +115,14 @@ tbody tr.open{background:#f2f7fb}
   main{grid-template-columns:1fr;padding:0}
   section.panel{border:0}
   .detail td{background:#fff}
+  .tip{display:none !important}
 }
 @media (max-width:880px){
   main{grid-template-columns:1fr}
   aside{position:static}
   .detail ul{columns:1}
+  .tip{left:0;top:100%;margin-top:6px;width:min(258px,90vw)}
+  .tip::before{display:none}
 }
 </style>
 </head>
@@ -384,6 +393,22 @@ function drawSpectrum(){
   ).join('');
 }
 
+const TILE_DEFS = {
+  'Accounts': 'Every account on the roster, whatever its tier or reach.',
+  'Org-wide by tier': 'Administrator and Owner accounts. Each reaches every active form with no grant recorded. Only a denial takes anything away.',
+  'With overrides': 'Accounts with at least one folder or form set to something other than their tier.',
+  'With denials': 'Accounts holding a NO override, a deliberate carve-out from what the tier grants. Confirm each one was intentional.',
+  'Reaches nothing': 'Can sign in but resolves to zero forms. Deprovisioning candidates, and service accounts are counted here.',
+  'MFA off': 'MfaEnabled is false. Turns red when any of them reach at least one form.',
+  'Service accounts': 'Matched by a regex on the email address, not a flag from Cognito. Read the list before quoting the number.',
+  'No-op overrides': 'Override rows, not accounts. They restate access the tier or a parent folder already grants.',
+  'Stale overrides': 'Override rows, not accounts. They point at archived or deleted forms and folders, so they grant nothing today.',
+  'Never signed in': 'Reaches forms, is not a service account, and has no sign-in event in the log window. Sign-ins fire only on fresh authentication, so check the account\u2019s event count first.',
+  'Idle 90+ days': 'Reaches forms and last signed in 90 or more days ago. The log only goes back so far, so this is a floor.',
+  'Integrations': 'Every connection in the org. This is the inventory rather than the log, so connections that have never acted are included.',
+  'AI connections': 'Integrations to AI assistant apps. Each runs as the account that connected it and reads whatever that account reads.'
+};
+
 function drawTotals(){
   const u = M.users;
   const rows = [
@@ -408,9 +433,40 @@ function drawTotals(){
     rows.push(['Integrations', M.inventory.length, false]);
     rows.push(['AI connections', ai, ai > 0]);
   }
-  $('#totals').innerHTML = rows.map(([k,v,hot]) =>
-    `<div class="stat ${hot?'hot':''}"><span>${k}</span><b>${v}</b></div>`).join('');
+  $('#totals').innerHTML = rows.map(([k,v,hot]) => {
+    const def = TILE_DEFS[k];
+    return `<div class="stat ${hot?'hot':''}"><span class="k">${esc(k)}` +
+      (def ? `<button type="button" class="info" aria-expanded="false" aria-label="What ${esc(k)} counts">!</button>` : '') +
+      `</span><b>${v}</b>` +
+      (def ? `<span class="tip" role="note">${esc(def)}</span>` : '') + '</div>';
+  }).join('');
 }
+
+// Hover reveals the definition; the icon pins it open.
+function unpinTiles(){
+  document.querySelectorAll('#totals .stat.pinned').forEach(s => {
+    s.classList.remove('pinned');
+    s.querySelector('.info').setAttribute('aria-expanded', 'false');
+  });
+}
+
+$('#totals').addEventListener('click', e => {
+  const btn = e.target.closest('.info');
+  if (!btn) return;
+  const stat = btn.closest('.stat');
+  const on = !stat.classList.contains('pinned');
+  unpinTiles();
+  stat.classList.toggle('pinned', on);
+  btn.setAttribute('aria-expanded', String(on));
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#totals .stat')) unpinTiles();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') unpinTiles();
+});
 
 /* ---------- filtering ---------- */
 function filtered(){
