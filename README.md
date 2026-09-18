@@ -7,7 +7,8 @@ user in the admin UI one at a time.
 
 This reads the same data from the app's own internal endpoints, resolves it into
 effective access, and renders a report you can sort, filter, and send to whoever
-asked for the audit.
+asked for the audit. Point it at an Active Directory export as well and it tells
+you which of those accounts belong to people who no longer work here.
 
 Every call it makes is a read. Nothing is written back to Cognito Forms.
 
@@ -58,12 +59,14 @@ still appear. For each one it shows the service, whether it runs as a person or
 as an org-scoped API key, what that person's account reaches, when it was
 connected and by whom, and its last recorded event.
 
-**Findings.** Seventeen computed sections. Accounts that reach everything by tier come
-first, then access without MFA, Limited Access accounts that accumulated broad
-reach, service accounts, the Editor and Reviewer gap, no-op overrides, deliberate
-denials, overrides on archived or deleted forms, and accounts that reach nothing.
-With an activity log attached it also flags accounts that reach forms but have
-never signed in, accounts dormant 90 days or more, org-wide accounts nobody is
+**Findings.** Nineteen computed sections. With a directory export attached, the two
+that need no notice period come first: accounts reaching forms with no AD account,
+and accounts reaching forms while disabled in AD. Then accounts that reach
+everything by tier, access without MFA, Limited Access accounts that accumulated
+broad reach, service accounts, the Editor and Reviewer gap, no-op overrides,
+deliberate denials, overrides on archived or deleted forms, and accounts that reach
+nothing. With an activity log attached it also flags accounts that reach forms but
+have never signed in, accounts dormant 90 days or more, org-wide accounts nobody is
 using, and service accounts with no activity at all. Integration findings cover
 AI assistant connections, org-scoped API keys, integrations that have never
 acted, and integrations idle 90 days or more.
@@ -73,8 +76,8 @@ Any view exports to CSV.
 ## Summary tiles
 
 The strip counts accounts unless a tile says otherwise. `Accounts` is the roster
-total. The last four tiles appear only when the snapshot includes the audit log
-or the integration inventory.
+total. Tiles past the first nine appear only when the snapshot includes the audit
+log, the integration inventory, or a directory export.
 
 **Org-wide by tier.** Accounts at Administrator or Owner. These reach every active
 form in the org without a single grant being recorded. The only way to take
@@ -124,6 +127,14 @@ are included.
 Claude. These are OAuth connections, so each one runs as the account that connected
 it and reads whatever that account can read. The tile turns red when the count is
 above zero.
+
+**Not in AD.** No Active Directory account carries that address on any of its
+addresses. Usually means the person has left, but contractors, vendors, and shared
+mailboxes land here too, so confirm before removing.
+
+**Disabled in AD.** Matched a directory account that is disabled. The person is
+gone and the Cognito access is still live, because Cognito signs in against its own
+account list rather than the directory.
 
 ## Cross-referencing Active Directory
 
