@@ -3,6 +3,9 @@ audit-data.js
 audit-data.json
 *.csv
 
+# Directory export. Every employee, with department and manager.
+ad-data.js
+
 # Message drafts carry recipient addresses.
 *.eml
 

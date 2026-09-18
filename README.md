@@ -7,7 +7,8 @@ user in the admin UI one at a time.
 
 This reads the same data from the app's own internal endpoints, resolves it into
 effective access, and renders a report you can sort, filter, and send to whoever
-asked for the audit.
+asked for the audit. Point it at an Active Directory export as well and it tells
+you which of those accounts belong to people who no longer work here.
 
 Every call it makes is a read. Nothing is written back to Cognito Forms.
 
@@ -58,12 +59,14 @@ still appear. For each one it shows the service, whether it runs as a person or
 as an org-scoped API key, what that person's account reaches, when it was
 connected and by whom, and its last recorded event.
 
-**Findings.** Seventeen computed sections. Accounts that reach everything by tier come
-first, then access without MFA, Limited Access accounts that accumulated broad
-reach, service accounts, the Editor and Reviewer gap, no-op overrides, deliberate
-denials, overrides on archived or deleted forms, and accounts that reach nothing.
-With an activity log attached it also flags accounts that reach forms but have
-never signed in, accounts dormant 90 days or more, org-wide accounts nobody is
+**Findings.** Nineteen computed sections. With a directory export attached, the two
+that need no notice period come first: accounts reaching forms with no AD account,
+and accounts reaching forms while disabled in AD. Then accounts that reach
+everything by tier, access without MFA, Limited Access accounts that accumulated
+broad reach, service accounts, the Editor and Reviewer gap, no-op overrides,
+deliberate denials, overrides on archived or deleted forms, and accounts that reach
+nothing. With an activity log attached it also flags accounts that reach forms but
+have never signed in, accounts dormant 90 days or more, org-wide accounts nobody is
 using, and service accounts with no activity at all. Integration findings cover
 AI assistant connections, org-scoped API keys, integrations that have never
 acted, and integrations idle 90 days or more.
@@ -73,8 +76,8 @@ Any view exports to CSV.
 ## Summary tiles
 
 The strip counts accounts unless a tile says otherwise. `Accounts` is the roster
-total. The last four tiles appear only when the snapshot includes the audit log
-or the integration inventory.
+total. Tiles past the first nine appear only when the snapshot includes the audit
+log, the integration inventory, or a directory export.
 
 **Org-wide by tier.** Accounts at Administrator or Owner. These reach every active
 form in the org without a single grant being recorded. The only way to take
@@ -124,6 +127,59 @@ are included.
 Claude. These are OAuth connections, so each one runs as the account that connected
 it and reads whatever that account can read. The tile turns red when the count is
 above zero.
+
+**Not in AD.** No Active Directory account carries that address on any of its
+addresses. Usually means the person has left, but contractors, vendors, and shared
+mailboxes land here too, so confirm before removing.
+
+**Disabled in AD.** Matched a directory account that is disabled. The person is
+gone and the Cognito access is still live, because Cognito signs in against its own
+account list rather than the directory.
+
+## Cross-referencing Active Directory
+
+Cognito keeps its own account list. Disabling someone in AD does not close their
+Cognito access, and nothing in Cognito knows the person has left. So the most
+useful column in the report comes from outside Cognito entirely.
+
+`export-ad.ps1` reads the directory over ADSI, which needs no RSAT module and no
+special rights beyond a domain-joined session:
+
+```
+powershell -ExecutionPolicy Bypass -File .\export-ad.ps1
+```
+
+It writes two files. `ad-users.csv` is the full export, useful on its own.
+`ad-data.js` is the same data trimmed to the accounts that carry an email
+address, written as a script the report loads the same way it loads
+`audit-data.js`. Both are gitignored.
+
+Reload `report.html` and every account picks up a directory state.
+
+| State | Means |
+|---|---|
+| Active | Normal. Judge the account on its access. |
+| Disabled | Matched a disabled AD account. The person is gone, the access is not. |
+| Not in AD | No AD account carries that address. Usually separated. |
+
+Matching runs against `proxyAddresses` as well as the primary `mail` attribute,
+because a Cognito account often sits on an alias or an old domain. Without that,
+anyone who had been through a rename or a domain migration reads as "not in AD,"
+which is the state you act on most aggressively.
+
+"Not in AD" still deserves a look before you remove anything. Contractors,
+vendors, and shared mailboxes land there too, and so do service accounts, which
+is why the finding marks which rows look like people.
+
+Two findings come from this, both at the top of the list because they need no
+notice period: accounts reaching forms with no AD account, and accounts reaching
+forms while disabled in AD. Expanding any row shows the person's title,
+department, manager, and last directory sign-in, so you know who to ask when an
+account is ambiguous.
+
+It also changes who gets mail. Every message topic requires an active directory
+account, so selecting a group and picking a topic drops anyone who has left. You
+deprovision those instead.
 
 ## Sending a message
 
