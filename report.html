@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cognito Forms access report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#e7ebef; --surface:#ffffff; --ink:#131c24; --ink-soft:#4d616f;
+  --line:#c6d0d8; --line-soft:#dfe5ea;
+  --accent:#17567f; --alert:#a8331f; --warn:#b87333; --calm:#2f6b52;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5}
+button{font:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#loader{min-height:100vh;display:grid;place-items:center;padding:32px}
+.drop{background:var(--surface);border:2px dashed var(--line);max-width:560px;width:100%;padding:48px 40px;text-align:center}
+.drop.hot{border-color:var(--accent);background:#f2f7fb}
+.drop h1{font-size:22px;font-weight:600;margin:0 0 8px}
+.drop p{color:var(--ink-soft);margin:0 0 24px}
+.btn{background:var(--accent);color:#fff;border:0;padding:10px 18px;cursor:pointer;font-weight:500}
+.btn:hover{background:#0f4364}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);padding:6px 12px}
+.btn.ghost:hover{background:#f2f7fb}
+
+#app{display:none}
+header.top{background:var(--surface);border-bottom:1px solid var(--line);padding:18px 24px 0}
+.masthead{display:flex;flex-wrap:wrap;gap:16px;align-items:baseline;justify-content:space-between}
+.masthead h1{font-size:19px;font-weight:600;margin:0}
+.masthead .meta{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+
+.spectrum{margin:18px 0 4px}
+.spectrum .bars{display:flex;align-items:flex-end;gap:1px;height:56px;border-bottom:1px solid var(--line)}
+.spectrum .bar{flex:1;min-width:2px;background:var(--accent);opacity:.5;cursor:pointer}
+.spectrum .bar:hover{opacity:1}
+.spectrum .bar.global{background:var(--alert);opacity:.8}
+.spectrum .cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--ink-soft);padding-top:6px}
+
+nav.tabs{display:flex;gap:2px;margin-top:14px}
+nav.tabs button{background:transparent;border:0;border-bottom:2px solid transparent;padding:10px 16px;cursor:pointer;color:var(--ink-soft);font-weight:500}
+nav.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+
+main{display:grid;grid-template-columns:236px 1fr;gap:20px;padding:20px 24px 64px;align-items:start}
+aside{background:var(--surface);border:1px solid var(--line);padding:16px;position:sticky;top:16px}
+aside h2{font-size:12px;font-weight:600;margin:0 0 10px;color:var(--ink-soft)}
+aside h2:not(:first-child){margin-top:20px}
+aside label{display:flex;gap:8px;align-items:center;padding:3px 0;cursor:pointer}
+aside input[type=search]{width:100%;padding:7px 9px;border:1px solid var(--line);font:inherit}
+.stat{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;padding:2px 0;border-bottom:1px solid var(--line-soft)}
+.stat b{font-weight:500}
+.stat.hot b{color:var(--alert)}
+
+section.panel{background:var(--surface);border:1px solid var(--line);min-height:400px}
+table{width:100%;border-collapse:collapse}
+thead th{text-align:left;font-size:12px;font-weight:600;color:var(--ink-soft);padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:var(--surface);cursor:pointer;user-select:none}
+thead th.num,td.num{text-align:right}
+thead th:hover{color:var(--ink)}
+thead th .dir{color:var(--accent)}
+tbody td{padding:9px 12px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tbody tr.row{cursor:pointer}
+tbody tr.row:hover{background:#f4f7f9}
+tbody tr.open{background:#f2f7fb}
+.mono{font-family:var(--mono);font-size:12.5px}
+.name{font-weight:500}
+.sub{color:var(--ink-soft);font-size:12px}
+.zero{color:#9aa9b3}
+.pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 6px;border:1px solid var(--line)}
+.pill.ad{border-color:#e0b9b0;background:#fbeeeb;color:var(--alert)}
+.pill.ed{border-color:#dcc6a6;background:#faf3e9;color:var(--warn)}
+.pill.re{border-color:#b9cfc4;background:#eef5f1;color:var(--calm)}
+.pill.no{border-color:#c6d0d8;background:#eef1f4;color:var(--ink-soft)}
+.pill.svc{border-color:#dcc6a6;background:#faf3e9;color:var(--warn)}
+.pill.tier{border-color:#e0b9b0;background:#fbeeeb;color:var(--alert)}
+.detail td{background:#f8fafb;padding:14px 16px 18px}
+.detail h4{margin:0 0 6px;font-size:12px;color:var(--ink-soft);font-weight:600}
+.detail h4:not(:first-child){margin-top:14px}
+.detail ul{margin:0;padding-left:18px;columns:2;column-gap:28px}
+.detail li{font-size:12.5px;break-inside:avoid;margin-bottom:2px}
+.detail .none{color:#9aa9b3;font-size:12.5px;margin:0}
+.baseline{background:#fff;border-left:3px solid var(--accent);padding:8px 12px;margin:0 0 14px;font-size:12.5px}
+.baseline.wide{border-left-color:var(--alert)}
+
+.finding{border-bottom:1px solid var(--line);padding:18px 20px}
+.finding:last-child{border-bottom:0}
+.finding h3{margin:0 0 4px;font-size:15px;font-weight:600}
+.finding .why{color:var(--ink-soft);margin:0 0 10px;max-width:70ch}
+.finding .count{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+.finding table{margin-top:8px}
+.finding thead th{position:static;cursor:default}
+.sev{display:inline-block;width:8px;height:8px;margin-right:8px;vertical-align:1px}
+.sev.high{background:var(--alert)}
+.sev.med{background:var(--warn)}
+.sev.low{background:var(--accent)}
+
+.toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line)}
+.toolbar .count{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+.empty{padding:60px 20px;text-align:center;color:var(--ink-soft)}
+
+@media print{
+  body{background:#fff}
+  aside,nav.tabs,.toolbar .btn,.spectrum{display:none}
+  main{grid-template-columns:1fr;padding:0}
+  section.panel{border:0}
+  .detail td{background:#fff}
+}
+@media (max-width:880px){
+  main{grid-template-columns:1fr}
+  aside{position:static}
+  .detail ul{columns:1}
+}
+</style>
+</head>
+<body>
+
+<!-- Loads if a collector has written audit-data.js beside this file.
+     When it isn't there the drop zone takes over. -->
+<script src="./audit-data.js" onerror="window.__AUDIT_ABSENT=true"></script>
+
+<div id="loader">
+  <div class="drop" id="drop">
+    <h1>Cognito Forms access report</h1>
+    <p>Drop <span class="mono">audit-data.js</span> here, or pick the file.</p>
+    <button class="btn" id="pick">Choose file</button>
+    <input type="file" id="file" accept=".js,.json,application/json,text/javascript" hidden>
+    <p class="sub" style="margin:22px 0 0">Put the file next to this page and name it
+      <span class="mono">audit-data.js</span> to skip this step.</p>
+    <p id="err" style="color:var(--alert);margin:14px 0 0"></p>
+  </div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <div class="masthead">
+      <h1 id="orgName">—</h1>
+      <div class="meta">
+        <span id="collected">—</span>
+        <button class="btn ghost" id="swap" style="margin-left:12px">Load another snapshot</button>
+      </div>
+    </div>
+
+    <div class="spectrum">
+      <div class="bars" id="bars"></div>
+      <div class="cap">
+        <span>every account with access, sorted by forms reachable. red is org-wide by tier</span>
+        <span id="spectrumMax">—</span>
+      </div>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="people">People</button>
+      <button role="tab" aria-selected="false" data-tab="folders">Folders</button>
+      <button role="tab" aria-selected="false" data-tab="findings">Findings</button>
+      <button role="tab" aria-selected="false" data-tab="activity" id="tabActivity" hidden>Activity</button>
+    </nav>
+  </header>
+
+  <main>
+    <aside>
+      <h2>Search</h2>
+      <input type="search" id="q" placeholder="name, email, folder, form">
+
+      <h2>Org tier</h2>
+      <div id="tierFilters"></div>
+
+      <h2>Show only</h2>
+      <label><input type="checkbox" id="fGlobal"> Org-wide by tier</label>
+      <label><input type="checkbox" id="fOverride"> Has overrides</label>
+      <label><input type="checkbox" id="fDenied"> Has denials</label>
+      <label><input type="checkbox" id="fMfaOff"> MFA off</label>
+      <label><input type="checkbox" id="fService"> Service accounts</label>
+      <label><input type="checkbox" id="fAccess" checked> Reaches at least one form</label>
+      <label id="lblNever" hidden><input type="checkbox" id="fNever"> Never signed in</label>
+      <label id="lblIdle" hidden><input type="checkbox" id="fIdle"> Idle 90+ days</label>
+
+      <h2>Totals</h2>
+      <div id="totals"></div>
+    </aside>
+
+    <section class="panel">
+      <div class="toolbar">
+        <span class="count" id="shown">—</span>
+        <span>
+          <button class="btn ghost" id="expandAll">Expand all</button>
+          <button class="btn ghost" id="csv">Download CSV</button>
+        </span>
+      </div>
+      <div id="view"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let D = null, M = null, tab = 'people', sortKey = 'reach', sortDir = -1;
+const openRows = new Set();
+
+/* ---------- load ---------- */
+const drop = $('#drop');
+$('#pick').onclick = () => $('#file').click();
+$('#file').onchange = e => e.target.files[0] && read(e.target.files[0]);
+['dragenter','dragover'].forEach(t => drop.addEventListener(t, e => {
+  e.preventDefault(); drop.classList.add('hot');
+}));
+['dragleave','drop'].forEach(t => drop.addEventListener(t, e => {
+  e.preventDefault(); drop.classList.remove('hot');
+}));
+drop.addEventListener('drop', e => e.dataTransfer.files[0] && read(e.dataTransfer.files[0]));
+
+function parsePayload(text){
+  const trimmed = String(text).replace(/^\s*window\.__AUDIT\s*=\s*/, '').replace(/;\s*$/, '');
+  const data = JSON.parse(trimmed);
+  if (!Array.isArray(data.users)) throw new Error('No users array in that file.');
+  if (!data.users.length || data.users[0].tier === undefined) {
+    throw new Error('That file came from an older collector. Re-run collect.js and use the new file.');
+  }
+  return data;
+}
+
+function read(file){
+  const r = new FileReader();
+  r.onload = () => {
+    try { boot(parsePayload(r.result)); }
+    catch (err) { $('#err').textContent = err.message; }
+  };
+  r.readAsText(file);
+}
+
+/* ---------- model ----------
+   Cognito resolves access as: start from the account's global tier, then apply
+   overrides. A form override beats a folder override, which beats the tier.
+   NO is a denial, not an absence, so it has to be applied like any other code. */
+const SERVICE = /(integration|service|automate|support|admin|webservices|o365|api|noreply)/i;
+const RANK = { AD: 3, ED: 2, RE: 1, NO: 0 };
+const LABEL = { AD: 'Administrator', ED: 'Editor', RE: 'Reviewer', NO: 'denied' };
+
+function build(d){
+  const globalTiers = d.globalTiers || ['Administrator', 'Owner'];
+  const A = d.activity || null;
+  const NOW = d.collectedAt ? Date.parse(d.collectedAt) : Date.now();
+  const folderName = Object.fromEntries(d.folders.map(f => [f.id, f.name]));
+  const formById = Object.fromEntries(d.forms.map(f => [f.id, f]));
+  const formsByFolder = {};
+  d.forms.forEach(f => { (formsByFolder[f.folderId] ||= []).push(f); });
+  const activeForms = d.forms.filter(f => !f.archived);
+
+  const users = d.users.map(u => {
+    const orgWide = globalTiers.indexOf(u.tier) >= 0;
+
+    // Resolve one code per form, cheapest correct way: tier baseline, then
+    // folder overrides, then form overrides.
+    const eff = {};
+    if (orgWide) activeForms.forEach(f => { eff[f.id] = 'AD'; });
+
+    u.folderOverrides.forEach(o => {
+      (formsByFolder[o.id] || []).forEach(f => { if (!f.archived) eff[f.id] = o.code; });
+    });
+    u.formOverrides.forEach(o => {
+      const f = formById[o.id];
+      if (f && !f.archived) eff[o.id] = o.code;
+    });
+
+    const reachable = Object.entries(eff).filter(([, c]) => c !== 'NO');
+    const reach = reachable.length;
+    const reachAdmin = reachable.filter(([, c]) => c === 'AD').length;
+
+    // An override is a no-op when it restates what the tier already gives.
+    const noopTier = orgWide
+      ? [].concat(
+          u.folderOverrides.filter(o => o.code === 'AD').map(o => 'folder ' + (folderName[o.id] || o.id)),
+          u.formOverrides.filter(o => o.code === 'AD' && formById[o.id] && !formById[o.id].archived)
+            .map(o => 'form ' + formById[o.id].name))
+      : [];
+
+    // A form override is redundant when its folder override already covers it
+    // at the same code.
+    const folderCode = Object.fromEntries(u.folderOverrides.map(o => [o.id, o.code]));
+    const noopFolder = u.formOverrides.filter(o => {
+      const f = formById[o.id];
+      return f && !f.archived && folderCode[f.folderId] === o.code;
+    }).map(o => 'form ' + formById[o.id].name);
+
+    const staleForm = u.formOverrides.filter(o => !formById[o.id] || formById[o.id].archived);
+    const staleFolder = u.folderOverrides.filter(o => !folderName[o.id]);
+
+    const denials = [].concat(
+      u.folderOverrides.filter(o => o.code === 'NO'),
+      u.formOverrides.filter(o => o.code === 'NO' && formById[o.id] && !formById[o.id].archived)
+    ).length;
+
+    const act = A ? A.byEmail[u.email.toLowerCase()] : null;
+    const lastLogin = act && act.lastLogin ? act.lastLogin : null;
+    const lastActivity = act && act.lastActivity ? act.lastActivity : null;
+    const idle = lastLogin ? Math.floor((NOW - Date.parse(lastLogin)) / 86400000) : null;
+    const idleAny = lastActivity ? Math.floor((NOW - Date.parse(lastActivity)) / 86400000) : null;
+
+    const display = [u.last, u.first].filter(Boolean).join(', ') || u.email.split('@')[0];
+    return {
+      ...u, display, orgWide,
+      lastLogin, lastActivity, logins: act ? act.logins : 0,
+      events: act ? act.total : 0,
+      idle, idleAny,
+      // Sort keys: never-seen accounts sort as maximally idle rather than blank.
+      idleSort: idle == null ? 99999 : idle,
+      neverSeen: !act,
+      service: SERVICE.test(u.email) || (!u.first && !u.last),
+      overrides: u.folderOverrides.length + u.formOverrides.length,
+      denials, reach, reachAdmin,
+      noop: noopTier.length + noopFolder.length,
+      noopList: [].concat(noopTier, noopFolder),
+      stale: staleForm.length + staleFolder.length,
+      staleList: [].concat(
+        staleForm.map(o => 'form ' + o.id + (formById[o.id] ? ' (archived)' : ' (deleted)') + ' ' + o.code),
+        staleFolder.map(o => 'folder ' + o.id + ' (deleted) ' + o.code)),
+      folderList: u.folderOverrides.map(o => ({
+        label: folderName[o.id] || '[deleted folder ' + o.id + ']',
+        code: o.code, count: (formsByFolder[o.id] || []).filter(f => !f.archived).length })),
+      formList: u.formOverrides.map(o => ({
+        label: formById[o.id]
+          ? formById[o.id].name + (formById[o.id].archived ? ' (archived)' : '')
+          : '[deleted form ' + o.id + ']',
+        code: o.code }))
+    };
+  });
+
+  const folders = d.folders.map(f => {
+    const over = users.filter(u => u.folderOverrides.some(o => o.id === f.id))
+      .map(u => ({ email: u.email, display: u.display,
+                   code: u.folderOverrides.find(o => o.id === f.id).code }));
+    return { ...f, formCount: (formsByFolder[f.id] || []).filter(x => !x.archived).length, over };
+  });
+
+  const AI_SERVICE = /^(chatgpt|claude|gemini|copilot|perplexity|openai|anthropic)$/i;
+  const inventory = (d.integrations || []).map(g => {
+    const owner = g.ownerEmail
+      ? users.find(u => u.email.toLowerCase() === g.ownerEmail) : null;
+    return { ...g,
+      ai: AI_SERVICE.test(g.service || ''),
+      ownerDisplay: owner ? owner.display : (g.ownerEmail || null),
+      ownerTier: owner ? owner.tier : null,
+      ownerReach: owner ? owner.reach : null,
+      idleDays: g.lastSeen ? Math.floor((NOW - Date.parse(g.lastSeen)) / 86400000) : null };
+  });
+
+  return { users, folders, globalTiers, activity: A, now: NOW, inventory,
+           formCount: activeForms.length, archivedCount: d.forms.length - activeForms.length,
+           folderCount: d.folders.length };
+}
+
+/* ---------- boot ---------- */
+function boot(d){
+  D = d; M = build(d);
+  $('#loader').style.display = 'none';
+  $('#app').style.display = 'block';
+  $('#orgName').textContent = d.org + ' — Cognito Forms access';
+  $('#collected').textContent = 'collected ' + new Date(d.collectedAt).toLocaleString()
+    + '  ·  ' + M.users.length + ' accounts  ·  ' + M.formCount + ' active forms  ·  '
+    + M.folderCount + ' folders';
+
+  const tiers = [...new Set(M.users.map(u => u.tier))].sort();
+  $('#tierFilters').innerHTML = tiers.map(t =>
+    `<label><input type="checkbox" class="tier" value="${esc(t)}" checked> ${esc(t)}</label>`).join('');
+
+  if (M.activity || (M.inventory && M.inventory.length)) $('#tabActivity').hidden = false;
+  drawSpectrum();
+  drawTotals();
+  bind();
+  render();
+}
+
+function drawSpectrum(){
+  const list = M.users.filter(u => u.reach > 0).sort((a,b) => b.reach - a.reach);
+  const max = list.length ? list[0].reach : 1;
+  $('#spectrumMax').textContent = 'peak ' + max + ' of ' + M.formCount + ' forms · '
+    + list.length + ' accounts with access';
+  $('#bars').innerHTML = list.map(u =>
+    `<div class="bar ${u.orgWide ? 'global' : ''}" style="height:${Math.max(3, u.reach / max * 100)}%" title="${esc(u.display)} — ${u.reach} forms"></div>`
+  ).join('');
+}
+
+function drawTotals(){
+  const u = M.users;
+  const rows = [
+    ['Accounts', u.length, false],
+    ['Org-wide by tier', u.filter(x => x.orgWide).length, true],
+    ['With overrides', u.filter(x => x.overrides).length, false],
+    ['With denials', u.filter(x => x.denials).length, false],
+    ['Reaches nothing', u.filter(x => !x.reach).length, false],
+    ['MFA off', u.filter(x => !x.mfa).length, u.some(x => !x.mfa && x.reach)],
+    ['Service accounts', u.filter(x => x.service).length, false],
+    ['No-op overrides', u.reduce((n,x) => n + x.noop, 0), false],
+    ['Stale overrides', u.reduce((n,x) => n + x.stale, 0), false]
+  ];
+  if (M.activity) {
+    const never = u.filter(x => x.reach && !x.service && !x.logins).length;
+    const dorm = u.filter(x => x.reach && !x.service && x.logins && x.idle >= 90).length;
+    rows.push(['Never signed in', never, never > 0]);
+    rows.push(['Idle 90+ days', dorm, false]);
+  }
+  if (M.inventory && M.inventory.length) {
+    const ai = M.inventory.filter(g => g.ai).length;
+    rows.push(['Integrations', M.inventory.length, false]);
+    rows.push(['AI connections', ai, ai > 0]);
+  }
+  $('#totals').innerHTML = rows.map(([k,v,hot]) =>
+    `<div class="stat ${hot?'hot':''}"><span>${k}</span><b>${v}</b></div>`).join('');
+}
+
+/* ---------- filtering ---------- */
+function filtered(){
+  const q = $('#q').value.trim().toLowerCase();
+  const tiers = [...document.querySelectorAll('.tier:checked')].map(c => c.value);
+  return M.users.filter(u => {
+    if (!tiers.includes(u.tier)) return false;
+    if ($('#fGlobal').checked && !u.orgWide) return false;
+    if ($('#fOverride').checked && !u.overrides) return false;
+    if ($('#fDenied').checked && !u.denials) return false;
+    if ($('#fMfaOff').checked && u.mfa) return false;
+    if ($('#fService').checked && !u.service) return false;
+    if ($('#fAccess').checked && !u.reach) return false;
+    if ($('#fNever').checked && u.logins) return false;
+    if ($('#fIdle').checked && !(u.idle != null && u.idle >= 90)) return false;
+    if (!q) return true;
+    return (u.display + ' ' + u.email + ' ' + u.tier + ' ' +
+      u.folderList.map(f => f.label).join(' ') + ' ' +
+      u.formList.map(f => f.label).join(' ')).toLowerCase().includes(q);
+  }).sort((a,b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if (typeof x === 'string') return x.localeCompare(y) * sortDir;
+    return ((x ?? 0) - (y ?? 0)) * sortDir;
+  });
+}
+
+/* ---------- render ---------- */
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = n => n ? n : '<span class="zero">0</span>';
+
+function render(){
+  if (tab === 'people') renderPeople();
+  else if (tab === 'folders') renderFolders();
+  else if (tab === 'activity') renderActivity();
+  else renderFindings();
+}
+
+function cols(){
+  const base = [
+    ['display','Account',''],
+    ['tier','Org tier',''],
+    ['mfa','MFA',''],
+    ['overrides','Overrides','num'],
+    ['denials','Denials','num'],
+    ['reach','Forms reachable','num'],
+    ['reachAdmin','of those, admin','num']
+  ];
+  if (M.activity) base.push(['idleSort','Days since sign-in','num']);
+  return base;
+}
+const fmtDate = iso => iso ? new Date(iso).toLocaleDateString() : '';
+function idleCell(u){
+  if (!M.activity) return '';
+  if (u.neverSeen || u.lastLogin == null) {
+    return `<span style="color:var(--alert)">never</span>`
+      + (u.lastActivity ? `<div class="sub">active ${fmtDate(u.lastActivity)}</div>` : '');
+  }
+  const c = u.idle >= 180 ? 'var(--alert)' : u.idle >= 90 ? 'var(--warn)' : 'inherit';
+  return `<span style="color:${c}">${u.idle}</span><div class="sub">${fmtDate(u.lastLogin)}</div>`;
+}
+
+function renderPeople(){
+  const rows = filtered();
+  $('#shown').textContent = rows.length + ' of ' + M.users.length + ' accounts';
+  if (!rows.length){ $('#view').innerHTML = '<div class="empty">Nothing matches those filters.</div>'; return; }
+
+  const C = cols();
+  const head = C.map(([k,label,cls]) =>
+    `<th class="${cls}" data-sort="${k}">${label}${sortKey===k?` <span class="dir">${sortDir<0?'▼':'▲'}</span>`:''}</th>`).join('');
+
+  const body = rows.map(u => {
+    const open = openRows.has(u.email);
+    return `<tr class="row ${open?'open':''}" data-email="${esc(u.email)}">
+      <td><div class="name">${esc(u.display)}${u.service?' <span class="pill svc">service</span>':''}</div>
+          <div class="sub mono">${esc(u.email)}</div></td>
+      <td>${esc(u.tier)}${u.orgWide?' <span class="pill tier">org-wide</span>':''}</td>
+      <td class="mono">${u.mfa ? 'on' : '<span style="color:var(--alert)">off</span>'}</td>
+      <td class="num mono">${num(u.overrides)}</td>
+      <td class="num mono">${num(u.denials)}</td>
+      <td class="num mono"><b>${num(u.reach)}</b></td>
+      <td class="num mono">${num(u.reachAdmin)}</td>
+      ${M.activity ? `<td class="num mono">${idleCell(u)}</td>` : ''}
+    </tr>` + (open ? detailRow(u) : '');
+  }).join('');
+
+  $('#view').innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  wireTable();
+}
+
+function detailRow(u){
+  const list = (items, empty) => items.length
+    ? `<ul>${items.map(i => `<li>${esc(i.label)} <span class="pill ${i.code.toLowerCase()}">${i.code}</span>${i.count!=null?` <span class="sub">${i.count} forms</span>`:''}</li>`).join('')}</ul>`
+    : `<p class="none">${empty}</p>`;
+
+  const base = u.orgWide
+    ? `<div class="baseline wide"><b>${esc(u.tier)}</b> reaches all ${M.formCount} active forms by default.
+       Overrides below adjust that, and a denial is the only thing that removes access.</div>`
+    : `<div class="baseline"><b>${esc(u.tier)}</b> reaches nothing by default.
+       Everything this account can see comes from the overrides below.</div>`;
+
+  const extra = [];
+  if (u.noop) extra.push(`<h4>No-op overrides (${u.noop})</h4><ul>${u.noopList.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`);
+  if (u.stale) extra.push(`<h4>Stale overrides (${u.stale})</h4><ul>${u.staleList.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`);
+
+  return `<tr class="detail"><td colspan="${cols().length}">
+    ${base}
+    <h4>Folder overrides (${u.folderList.length})</h4>${list(u.folderList,'None.')}
+    <h4>Form overrides (${u.formList.length})</h4>${list(u.formList,'None.')}
+    ${extra.join('')}
+    ${M.activity ? activityBlock(u) : ''}
+    <h4>Account</h4>
+    <p class="none">Added ${esc(u.created)} · MFA ${u.mfa?'on':'off'} · ${u.verified?'verified':'not verified'}${u.workflowRole && u.workflowRole !== 'None' ? ' · workflow role ' + esc(u.workflowRole) : ''}</p>
+  </td></tr>`;
+}
+
+function activityBlock(u){
+  const a = M.activity.byEmail[u.email.toLowerCase()];
+  const win = M.activity.window;
+  if (!a) return `<h4>Activity</h4><p class="none">No events since ${fmtDate(win.from)}. This account has done nothing in the log window.</p>`;
+  const top = Object.entries(a.actions).sort((x,y) => y[1].n - x[1].n).slice(0, 6)
+    .map(([k,v]) => `${esc(k)} ×${v.n}`).join(' · ');
+  return `<h4>Activity</h4>
+    <p class="none">${a.logins ? `${a.logins} sign-ins, last ${fmtDate(a.lastLogin)}` : 'No sign-in events'}
+    · ${a.total} events total, last ${fmtDate(a.lastActivity)}</p>
+    <p class="none">${top}</p>`;
+}
+
+function renderFolders(){
+  const q = $('#q').value.trim().toLowerCase();
+  const rows = M.folders
+    .filter(f => !q || f.name.toLowerCase().includes(q) || f.over.some(h => (h.display+h.email).toLowerCase().includes(q)))
+    .sort((a,b) => b.over.length - a.over.length || a.name.localeCompare(b.name));
+  $('#shown').textContent = rows.length + ' of ' + M.folders.length + ' folders';
+
+  const orgWide = M.users.filter(u => u.orgWide).length;
+
+  $('#view').innerHTML = `<table><thead><tr>
+      <th>Folder</th><th class="num">Forms</th><th class="num">Overrides</th><th>Who has an override</th>
+    </tr></thead><tbody>` + rows.map(f => `<tr>
+      <td class="name">${esc(f.name)}${f.archived?' <span class="pill">archived</span>':''}</td>
+      <td class="num mono">${num(f.formCount)}</td>
+      <td class="num mono">${num(f.over.length)}</td>
+      <td>${f.over.length
+        ? f.over.sort((a,b)=>a.display.localeCompare(b.display)).map(h =>
+            `<span class="sub">${esc(h.display)} <span class="pill ${h.code.toLowerCase()}">${h.code}</span></span>`).join('<br>')
+        : `<span class="zero">No overrides. ${orgWide} org-wide accounts reach it by tier.</span>`}</td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+function renderFindings(){
+  const u = M.users, out = [];
+
+  const orgWide = u.filter(x => x.orgWide).sort((a,b) => b.reach - a.reach);
+  out.push(finding('high', 'Accounts that reach every form by tier',
+    `Administrator and Owner reach all ${M.formCount} active forms without a single grant being recorded. `
+    + `The users screen shows only the tier, so this access is invisible unless you go looking. `
+    + `That is ${orgWide.length} of ${u.length} accounts.`,
+    orgWide, x => [x.display, x.email, x.tier, x.reach + ' forms', x.denials ? x.denials + ' denials' : 'no denials'],
+    ['Account','Email','Tier','Reaches','Adjustments']));
+
+  const noMfa = u.filter(x => !x.mfa && x.reach).sort((a,b) => b.reach - a.reach);
+  out.push(finding('high', 'Access without MFA',
+    'These accounts can reach forms and are not protected by a second factor. Fix these before anything else.',
+    noMfa, x => [x.display, x.email, x.tier, x.reach + ' forms'],
+    ['Account','Email','Tier','Reaches']));
+
+  const broad = u.filter(x => !x.orgWide && x.reach >= 20).sort((a,b) => b.reach - a.reach);
+  out.push(finding('med', 'Limited Access accounts with broad reach',
+    'Tier says Limited Access, but folder and form overrides add up. Folder overrides cascade, so a short list of grants can resolve to hundreds of forms.',
+    broad, x => [x.display, x.email, x.reach + ' forms', x.reachAdmin + ' as admin', x.overrides + ' overrides'],
+    ['Account','Email','Reaches','As administrator','Overrides']));
+
+  const svc = u.filter(x => x.service && x.reach).sort((a,b) => b.reach - a.reach);
+  out.push(finding('med', 'Service accounts with access',
+    'Non-human accounts that reach forms. Each needs a named owner and a reason to exist, or it should be retired.',
+    svc, x => [x.email, x.tier, x.reach + ' forms'],
+    ['Account','Tier','Reaches']));
+
+  const lowerTiers = u.filter(x => x.overrides && !x.orgWide);
+  const anyLower = lowerTiers.filter(x => x.folderOverrides.concat(x.formOverrides)
+    .some(o => o.code === 'ED' || o.code === 'RE'));
+  const allAdmin = lowerTiers.filter(x => !anyLower.includes(x));
+  out.push(finding('med', 'Administrator where Editor or Reviewer would do',
+    `Cognito has four levels. ${anyLower.length} of ${lowerTiers.length} accounts with overrides use Editor or Reviewer anywhere. `
+    + 'The rest get full control of whatever they touch. This is a process gap rather than an individual problem.',
+    allAdmin, x => [x.display, x.email, x.overrides + ' overrides', x.reach + ' forms'],
+    ['Account','Email','Overrides','Reaches']));
+
+  const noop = u.filter(x => x.noop).sort((a,b) => b.noop - a.noop);
+  out.push(finding('low', 'Overrides that change nothing',
+    'These restate access the account already has, either from its tier or from a folder override above them. Removing them is safe and shortens the matrix.',
+    noop, x => [x.display, x.email, x.noop + ' no-op', x.noopList.slice(0,2).join('; ') + (x.noopList.length>2?' …':'')],
+    ['Account','Email','Count','Examples']));
+
+  const denied = u.filter(x => x.denials).sort((a,b) => b.denials - a.denials);
+  out.push(finding('low', 'Deliberate denials',
+    'Access removed below what the tier grants. Worth confirming each one was intentional, since a denial is the only way to carve anything out of an org-wide tier.',
+    denied, x => [x.display, x.email, x.tier, x.denials + ' denied'],
+    ['Account','Email','Tier','Denials']));
+
+  const stale = u.filter(x => x.stale).sort((a,b) => b.stale - a.stale);
+  out.push(finding('low', 'Overrides on archived or deleted forms',
+    'Permission rows left behind when a form was archived or removed. They grant nothing today. Cleanup rather than risk.',
+    stale, x => [x.display, x.email, x.stale + ' stale'],
+    ['Account','Email','Count']));
+
+  if (M.activity) {
+    const win = M.activity.window;
+    const days = Math.floor((M.now - Date.parse(win.from)) / 86400000);
+
+    const neverIn = u.filter(x => x.reach && !x.service && !x.logins)
+      .sort((a,b) => b.reach - a.reach);
+    out.push(finding('high', 'Reaches forms, never signed in',
+      `No sign-in event in ${days} days of log history, going back to ${fmtDate(win.from)}. `
+      + 'These accounts hold access nobody has used. Service accounts are excluded and listed separately below.',
+      neverIn, x => [x.display, x.email, x.tier, x.reach + ' forms',
+                     x.lastActivity ? 'other activity ' + fmtDate(x.lastActivity) : 'no activity at all'],
+      ['Account','Email','Tier','Reaches','Last seen']));
+
+    const dormant = u.filter(x => x.reach && !x.service && x.logins && x.idle >= 90)
+      .sort((a,b) => b.idle - a.idle);
+    out.push(finding('med', 'Dormant for 90 days or more',
+      'Signed in at some point, then stopped. Worth confirming the person still needs the access, or still works here.',
+      dormant, x => [x.display, x.email, x.tier, x.idle + ' days', x.reach + ' forms'],
+      ['Account','Email','Tier','Idle','Reaches']));
+
+    const riskyIdle = u.filter(x => x.orgWide && !x.service && (!x.logins || x.idle >= 90))
+      .sort((a,b) => b.idleSort - a.idleSort);
+    out.push(finding('high', 'Reaches every form and is not being used',
+      `Org-wide tier crossed with no recent sign-in. Each of these reaches all ${M.formCount} forms while showing no sign of anyone needing it.`,
+      riskyIdle, x => [x.display, x.email, x.tier,
+                       x.logins ? x.idle + ' days idle' : 'never signed in'],
+      ['Account','Email','Tier','Sign-in']));
+
+    const svcQuiet = u.filter(x => x.service && !x.events);
+    out.push(finding('med', 'Service accounts with no activity',
+      `No events of any kind in ${days} days. Since service accounts are not removed here, the question is whether the integration behind each one is still running.`,
+      svcQuiet, x => [x.email, x.tier, x.reach + ' forms'],
+      ['Account','Tier','Reaches']));
+  }
+
+  const inv = M.inventory || [];
+  if (inv.length) {
+    const ai = inv.filter(g => g.ai);
+    out.push(finding('high', 'AI assistant connections',
+      'Personal AI assistants holding an OAuth connection into the forms system. Each runs as the '
+      + 'person who connected it and inherits that account\'s access, so the reach figure below is '
+      + 'what the assistant can read. Form entries include resident-submitted data.',
+      ai, x => [x.name, x.service, x.ownerDisplay || x.ownerEmail || 'unidentified',
+                x.ownerTier ? x.ownerTier + ', ' + x.ownerReach + ' forms' : 'owner not resolved',
+                x.connectedAt ? fmtDate(x.connectedAt) : ''],
+      ['Integration','Service','Runs as','That account reaches','Connected']));
+
+    const orgKeys = inv.filter(g => !g.userScoped && !g.ai);
+    out.push(finding('med', 'API keys with org-wide scope',
+      'Key-based integrations are not bound to a user, so they run at whatever scope the key was '
+      + 'issued with rather than inheriting anyone\'s permissions. Each needs a named owner and a '
+      + 'documented purpose.',
+      orgKeys, x => [x.name, x.service, x.events ? x.events + ' events' : 'no activity',
+                     x.lastSeen ? fmtDate(x.lastSeen) : 'never',
+                     x.description ? x.description.slice(0, 60) : ''],
+      ['Integration','Service','Activity','Last seen','Description']));
+
+    const quiet = inv.filter(g => !g.events);
+    out.push(finding('med', 'Integrations with no recorded activity',
+      'Connected but never seen acting in the log window. Either dormant, or active in ways that '
+      + 'produce no log rows. An activity-only view would omit these entirely, which is the wrong '
+      + 'direction for an audit.',
+      quiet, x => [x.name, x.service, x.userScoped ? 'runs as ' + (x.ownerDisplay || 'a user') : 'API key',
+                   x.connectedAt ? 'connected ' + fmtDate(x.connectedAt) : ''],
+      ['Integration','Service','Scope','Connected']));
+
+    const idle = inv.filter(g => g.events && g.idleDays >= 90)
+      .sort((a,b) => b.idleDays - a.idleDays);
+    out.push(finding('low', 'Integrations idle 90 days or more',
+      'Active at some point, then stopped. Usually a flow that was retired without revoking the connection.',
+      idle, x => [x.name, x.service, x.idleDays + ' days', x.events + ' events'],
+      ['Integration','Service','Idle','Lifetime events']));
+  }
+
+  const nothing = u.filter(x => !x.reach && !x.service);
+  out.push(finding('low', 'Accounts that reach nothing',
+    'These can sign in and see no forms. Candidates for deprovisioning, which also frees a seat.',
+    nothing, x => [x.display, x.email, x.tier, 'added ' + x.created],
+    ['Account','Email','Tier','Added']));
+
+  $('#shown').textContent = 'findings';
+  $('#view').innerHTML = out.join('') +
+    (D.seatMessage ? `<div class="finding"><h3>Seat count</h3><p class="why">${esc(D.seatMessage)}</p></div>` : '');
+}
+
+function renderActivity(){
+  const A = M.activity;
+  if (!A) {
+    $('#shown').textContent = (M.inventory || []).length + ' integrations';
+    $('#view').innerHTML = integrationTable()
+      || '<div class="empty">No activity log in this snapshot.</div>';
+    return;
+  }
+  $('#shown').textContent = A.rows + ' log rows';
+
+  const loginNames = A.actions.filter(a => a.countedAsLogin).map(a => a.name);
+  const warn = loginNames.length ? '' :
+    `<div class="finding"><h3><span class="sev high"></span>No sign-in action recognised</h3>
+     <p class="why">Nothing in the action list below was counted as a sign-in, so every idle figure in this
+     report is unreliable. Find the action name that means signing in and add it to LOGIN_RE in collect.js.</p></div>`;
+
+  $('#view').innerHTML = warn + `<div class="finding">
+    <h3>Log window</h3>
+    <p class="why">${A.rows} events from ${fmtDate(A.window.from)} to ${fmtDate(A.window.to)}.
+    ${A.truncated ? 'Paging stopped at the cap, so the window is shorter than the full retention period.' : ''}
+    Counted as a sign-in: ${loginNames.length ? esc(loginNames.join(', ')) : 'nothing'}.</p>
+    <table><thead><tr><th>Action</th><th class="num">Events</th><th>Counted as sign-in</th></tr></thead>
+    <tbody>${A.actions.map(a => `<tr>
+      <td class="name">${esc(a.name)}</td>
+      <td class="num mono sub">${a.n}</td>
+      <td class="mono sub">${a.countedAsLogin ? 'yes' : ''}</td></tr>`).join('')}</tbody></table>
+  </div>` + integrationTable();
+}
+
+function integrationTable(){
+  const inv = M.inventory;
+  if (!inv || !inv.length) return '';
+  const rows = inv.slice().sort((a,b) =>
+    (b.ai - a.ai) || (a.events - b.events) || String(a.name).localeCompare(String(b.name)));
+  const quiet = inv.filter(g => !g.events).length;
+  return `<div class="finding">
+    <h3>Integration inventory</h3>
+    <p class="why">Every integration connected to the org, whether or not it has done anything.
+    ${quiet} of ${inv.length} have no recorded activity in the log window, which is exactly the case
+    an activity-only list would hide. A user-scoped connection runs as that person and carries
+    whatever access their account has.</p>
+    <table><thead><tr>
+      <th>Integration</th><th>Service</th><th>Runs as</th>
+      <th class="num">Events</th><th>Last seen</th><th>Connected</th>
+    </tr></thead><tbody>${rows.map(g => `<tr>
+      <td class="name">${esc(g.name || g.id)}${g.ai ? ' <span class="pill ad">AI assistant</span>' : ''}
+        ${g.description ? `<div class="sub">${esc(g.description.slice(0,110))}${g.description.length>110?'…':''}</div>` : ''}</td>
+      <td class="mono sub">${esc(g.service || '')}</td>
+      <td class="mono sub">${g.userScoped
+        ? esc(g.ownerDisplay || g.ownerEmail || 'unidentified account')
+          + (g.ownerTier ? `<br><span style="color:${g.ownerTier==='Administrator'||g.ownerTier==='Owner'?'var(--alert)':'inherit'}">${esc(g.ownerTier)}, ${g.ownerReach} forms</span>` : '')
+        : 'API key, org scope'}</td>
+      <td class="num mono sub">${g.events || '<span class="zero">0</span>'}</td>
+      <td class="mono sub">${g.lastSeen ? fmtDate(g.lastSeen) + (g.idleDays>=90?` <span style="color:var(--warn)">${g.idleDays}d</span>`:'') : '<span class="zero">never</span>'}</td>
+      <td class="mono sub">${g.connectedAt ? fmtDate(g.connectedAt) + (g.connectedBy?`<div>by ${esc(g.connectedBy)}</div>`:'') : ''}</td>
+    </tr>`).join('')}</tbody></table>
+  </div>`;
+}
+
+const CAP = 25;
+function finding(sev, title, why, rows, cells, heads){
+  const shown = rows.slice(0, CAP);
+  const more = rows.length - shown.length;
+  return `<div class="finding">
+    <h3><span class="sev ${sev}"></span>${esc(title)}</h3>
+    <p class="why">${esc(why)}</p>
+    <div class="count">${rows.length} account${rows.length===1?'':'s'}${more?`, showing the first ${CAP}`:''}</div>
+    ${rows.length ? `<table>
+      ${heads ? `<thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>` : ''}
+      <tbody>${shown.map(r =>
+        `<tr>${cells(r).map((c,i) => `<td class="${i?'mono sub':'name'}">${esc(c)}</td>`).join('')}</tr>`).join('')}
+      </tbody></table>
+      ${more ? `<p class="none" style="color:var(--ink-soft);font-size:12px">${more} more. Use the People tab or the CSV for the full list.</p>` : ''}`
+      : '<p class="none" style="color:var(--calm)">Nothing to flag here.</p>'}
+  </div>`;
+}
+
+/* ---------- wiring ---------- */
+function wireTable(){
+  document.querySelectorAll('thead th[data-sort]').forEach(th => th.onclick = () => {
+    const k = th.dataset.sort;
+    if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = (k === 'display' || k === 'tier') ? 1 : -1; }
+    render();
+  });
+  document.querySelectorAll('tr.row').forEach(tr => tr.onclick = () => {
+    const e = tr.dataset.email;
+    openRows.has(e) ? openRows.delete(e) : openRows.add(e);
+    render();
+  });
+}
+
+function bind(){
+  $('#q').oninput = render;
+  ['#fGlobal','#fOverride','#fDenied','#fMfaOff','#fService','#fAccess','#fNever','#fIdle']
+    .forEach(s => $(s).onchange = render);
+  if (M.activity) { $('#lblNever').hidden = false; $('#lblIdle').hidden = false; }
+  document.querySelectorAll('.tier').forEach(c => c.onchange = render);
+
+  document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('nav.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+    tab = b.dataset.tab;
+    render();
+  });
+
+  $('#expandAll').onclick = () => {
+    const rows = filtered();
+    if (openRows.size) openRows.clear(); else rows.forEach(u => openRows.add(u.email));
+    $('#expandAll').textContent = openRows.size ? 'Collapse all' : 'Expand all';
+    render();
+  };
+
+  $('#csv').onclick = () => {
+    const rows = filtered();
+    const head = ['Account','Email','OrgTier','OrgWideByTier','MFA','Overrides','Denials',
+                  'NoOpOverrides','StaleOverrides','FormsReachable','ReachableAsAdmin',
+                  'LastSignIn','DaysSinceSignIn','SignIns','LastActivity','TotalEvents',
+                  'FolderOverrides','FormOverrides'];
+    const q = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+    const body = rows.map(u => [
+      u.display, u.email, u.tier, u.orgWide ? 'yes' : 'no', u.mfa ? 'on' : 'off',
+      u.overrides, u.denials, u.noop, u.stale, u.reach, u.reachAdmin,
+      u.lastLogin ? fmtDate(u.lastLogin) : 'never', u.idle == null ? '' : u.idle,
+      u.logins || 0, u.lastActivity ? fmtDate(u.lastActivity) : 'never', u.events || 0,
+      u.folderList.map(f => `${f.label} (${f.code})`).join('; '),
+      u.formList.map(f => `${f.label} (${f.code})`).join('; ')
+    ].map(q).join(','));
+    const blob = new Blob(['\ufeff' + [head.map(q).join(','), ...body].join('\r\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cognito-access-' + D.collectedAt.slice(0,10) + '.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  };
+
+  $('#bars').onclick = e => {
+    const t = e.target.title;
+    if (t) { $('#q').value = t.split(' — ')[0]; tab = 'people';
+      document.querySelectorAll('nav.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.tab === 'people'));
+      render(); }
+  };
+
+  $('#swap').onclick = () => {
+    openRows.clear();
+    $('#app').style.display = 'none';
+    $('#loader').style.display = 'grid';
+    $('#err').textContent = '';
+  };
+}
+
+/* audit-data.js sitting next to this page boots the report with no drop step. */
+if (window.__AUDIT) {
+  try { boot(parsePayload('window.__AUDIT = ' + JSON.stringify(window.__AUDIT) + ';')); }
+  catch (err) { $('#err').textContent = err.message; }
+}
+</script>
+</body>
+</html>

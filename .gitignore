@@ -1,0 +1,13 @@
+# Collected permission data. Never commit this.
+audit-data.js
+audit-data.json
+*.csv
+
+# Playwright session profile
+.browser-profile/
+
+node_modules/
+__pycache__/
+.venv/
+venv/
+.DS_Store
