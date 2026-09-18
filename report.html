@@ -84,6 +84,8 @@ tbody tr.open{background:#f2f7fb}
 .pill.no{border-color:#c6d0d8;background:#eef1f4;color:var(--ink-soft)}
 .pill.svc{border-color:#dcc6a6;background:#faf3e9;color:var(--warn)}
 .pill.tier{border-color:#e0b9b0;background:#fbeeeb;color:var(--alert)}
+.pill.gone{border-color:#e0b9b0;background:#fbeeeb;color:var(--alert)}
+.pill.off{border-color:#dcc6a6;background:#faf3e9;color:var(--warn)}
 .detail td{background:#f8fafb;padding:14px 16px 18px}
 .detail h4{margin:0 0 6px;font-size:12px;color:var(--ink-soft);font-weight:600}
 .detail h4:not(:first-child){margin-top:14px}
@@ -158,6 +160,9 @@ tbody tr.picked{background:#f2f7fb}
      When it isn't there the drop zone takes over. -->
 <script src="./audit-data.js" onerror="window.__AUDIT_ABSENT=true"></script>
 
+<!-- Optional. export-ad.ps1 writes this; without it the report just omits the AD columns. -->
+<script src="./ad-data.js" onerror="window.__AD_ABSENT=true"></script>
+
 <div id="loader">
   <div class="drop" id="drop">
     <h1>Cognito Forms access report</h1>
@@ -213,6 +218,8 @@ tbody tr.picked{background:#f2f7fb}
       <label><input type="checkbox" id="fAccess" checked> Reaches at least one form</label>
       <label id="lblNever" hidden><input type="checkbox" id="fNever"> Never signed in</label>
       <label id="lblIdle" hidden><input type="checkbox" id="fIdle"> Idle 90+ days</label>
+      <label id="lblNoAd" hidden><input type="checkbox" id="fNoAd"> Not in AD</label>
+      <label id="lblAdOff" hidden><input type="checkbox" id="fAdOff"> Disabled in AD</label>
 
       <h2>Totals</h2>
       <div id="totals"></div>
@@ -310,9 +317,24 @@ const SERVICE = /(integration|service|automate|support|admin|webservices|o365|ap
 const RANK = { AD: 3, ED: 2, RE: 1, NO: 0 };
 const LABEL = { AD: 'Administrator', ED: 'Editor', RE: 'Reviewer', NO: 'denied' };
 
+// AD rows are indexed by every address they carry, since a Cognito account may
+// sit on a proxy address rather than the primary one.
+function indexAd(rows){
+  const by = new Map();
+  rows.forEach(r => {
+    const addrs = [r.mail].concat(String(r.smtp || '').split(';'));
+    addrs.forEach(a => {
+      a = String(a || '').trim().toLowerCase();
+      if (a && !by.has(a)) by.set(a, r);
+    });
+  });
+  return by;
+}
+
 function build(d){
   const globalTiers = d.globalTiers || ['Administrator', 'Owner'];
   const A = d.activity || null;
+  const AD = Array.isArray(window.__AD) && window.__AD.length ? indexAd(window.__AD) : null;
   const NOW = d.collectedAt ? Date.parse(d.collectedAt) : Date.now();
   const folderName = Object.fromEntries(d.folders.map(f => [f.id, f.name]));
   const formById = Object.fromEntries(d.forms.map(f => [f.id, f]));
@@ -371,8 +393,12 @@ function build(d){
     const idleAny = lastActivity ? Math.floor((NOW - Date.parse(lastActivity)) / 86400000) : null;
 
     const display = [u.last, u.first].filter(Boolean).join(', ') || u.email.split('@')[0];
+    const adRow = AD ? AD.get(u.email.toLowerCase()) : null;
+    const adState = !AD ? null : adRow ? (adRow.enabled ? 'active' : 'disabled') : 'missing';
     return {
       ...u, display, orgWide,
+      ad: adRow || null, adState,
+      adSort: adState === 'missing' ? 2 : adState === 'disabled' ? 1 : 0,
       lastLogin, lastActivity, logins: act ? act.logins : 0,
       events: act ? act.total : 0,
       idle, idleAny,
@@ -418,7 +444,7 @@ function build(d){
       idleDays: g.lastSeen ? Math.floor((NOW - Date.parse(g.lastSeen)) / 86400000) : null };
   });
 
-  return { users, folders, globalTiers, activity: A, now: NOW, inventory,
+  return { users, folders, globalTiers, activity: A, now: NOW, inventory, ad: !!AD,
            formCount: activeForms.length, archivedCount: d.forms.length - activeForms.length,
            folderCount: d.folders.length };
 }
@@ -473,7 +499,7 @@ const MESSAGE_TOPICS = [
     label: 'No recorded sign-in',
     note: 'Notice before deprovisioning, with an opt-out.',
     needsActivity: true,
-    applies: u => !u.logins && !u.service,
+    applies: u => !u.logins && !u.service && stillHere(u),
     subject: 'Cognito Forms access review - reply by {date} if you still need your account',
     body: `I am reviewing Cognito Forms accounts for the City and removing access that is not being used.
 
@@ -485,7 +511,7 @@ If I do not hear from you by then, I will remove the account. Nothing you have s
     id: 'mfa',
     label: 'MFA off',
     note: 'Ask to enable a second factor, with a deadline.',
-    applies: u => !u.mfa && !u.service,
+    applies: u => !u.mfa && !u.service && stillHere(u),
     subject: 'Turn on multi-factor authentication for Cognito Forms by {date}',
     body: `Your Cognito Forms account can reach live forms and does not have multi-factor authentication turned on. Form entries include resident-submitted information, so an account without a second factor is a real exposure.
 
@@ -502,7 +528,7 @@ Reply if you run into trouble and I will walk through it with you.` + SIGNOFF
     label: 'Idle 90+ days',
     note: 'Confirm the account is still needed.',
     needsActivity: true,
-    applies: u => u.idle != null && u.idle >= 90 && !u.service,
+    applies: u => u.idle != null && u.idle >= 90 && !u.service && stillHere(u),
     subject: 'Do you still need Cognito Forms access? Reply by {date}',
     body: `I am reviewing Cognito Forms accounts for the City. Yours has not been used in at least 90 days.
 
@@ -512,7 +538,7 @@ If you still need it, reply by {date} and I will leave it in place. If I do not 
     id: 'tier',
     label: 'Org-wide access review',
     note: 'For Administrator and Owner accounts that reach every form.',
-    applies: u => u.orgWide,
+    applies: u => u.orgWide && stillHere(u),
     subject: 'Reducing your Cognito Forms access to the forms you work on',
     body: `Your Cognito Forms account is set to Administrator or Owner, which reaches all {forms} active forms in the City's account. That is broader than almost anyone needs, and it is not visible on the users screen, so most people are not aware of it.
 
@@ -523,6 +549,9 @@ Reply by {date} with the forms or folders you need and I will set them up before
 ];
 
 const selected = new Set();
+
+// Someone who has left the City gets deprovisioned, not emailed.
+const stillHere = u => !M.ad || u.adState === 'active';
 
 function selectedUsers(){
   return M.users.filter(u => selected.has(u.email));
@@ -548,7 +577,9 @@ const TILE_DEFS = {
   'Never signed in': 'Reaches forms, is not a service account, and has no sign-in event in the log window. Sign-ins fire only on fresh authentication, so check the account\u2019s event count first.',
   'Idle 90+ days': 'Reaches forms and last signed in 90 or more days ago. The log only goes back so far, so this is a floor.',
   'Integrations': 'Every connection in the org. This is the inventory rather than the log, so connections that have never acted are included.',
-  'AI connections': 'Integrations to AI assistant apps. Each runs as the account that connected it and reads whatever that account reads.'
+  'AI connections': 'Integrations to AI assistant apps. Each runs as the account that connected it and reads whatever that account reads.',
+  'Not in AD': 'No Active Directory account carries this address on any of its addresses. Usually means the person has left. Verify before removing, since a contractor or a shared mailbox can land here too.',
+  'Disabled in AD': 'Matched an Active Directory account that is disabled. The person is gone but the Cognito access is still live.'
 };
 
 function drawTotals(){
@@ -574,6 +605,12 @@ function drawTotals(){
     const ai = M.inventory.filter(g => g.ai).length;
     rows.push(['Integrations', M.inventory.length, false]);
     rows.push(['AI connections', ai, ai > 0]);
+  }
+  if (M.ad) {
+    const gone = u.filter(x => x.adState === 'missing').length;
+    const off = u.filter(x => x.adState === 'disabled').length;
+    rows.push(['Not in AD', gone, gone > 0]);
+    rows.push(['Disabled in AD', off, off > 0]);
   }
   $('#totals').innerHTML = rows.map(([k,v,hot]) => {
     const def = TILE_DEFS[k];
@@ -627,6 +664,8 @@ function filtered(){
     if ($('#fAccess').checked && !u.reach) return false;
     if ($('#fNever').checked && u.logins) return false;
     if ($('#fIdle').checked && !(u.idle != null && u.idle >= 90)) return false;
+    if ($('#fNoAd').checked && u.adState !== 'missing') return false;
+    if ($('#fAdOff').checked && u.adState !== 'disabled') return false;
     if (!q) return true;
     return (u.display + ' ' + u.email + ' ' + u.tier + ' ' +
       u.folderList.map(f => f.label).join(' ') + ' ' +
@@ -661,9 +700,18 @@ function cols(){
     ['reachAdmin','of those, admin','num']
   ];
   if (M.activity) base.push(['idleSort','Days since sign-in','num']);
+  if (M.ad) base.push(['adSort','AD','']);
   return base;
 }
 const fmtDate = iso => iso ? new Date(iso).toLocaleDateString() : '';
+
+function adCell(u){
+  if (!M.ad) return '';
+  if (u.adState === 'missing') return '<span class="pill gone">not in AD</span>';
+  if (u.adState === 'disabled') return '<span class="pill off">disabled</span>'
+    + (u.ad.last ? `<div class="sub">since ${esc(u.ad.last)}</div>` : '');
+  return `<span class="sub">${esc(u.ad.dept || 'active')}</span>`;
+}
 function idleCell(u){
   if (!M.activity) return '';
   if (u.neverSeen || u.lastLogin == null) {
@@ -701,6 +749,7 @@ function renderPeople(){
       <td class="num mono"><b>${num(u.reach)}</b></td>
       <td class="num mono">${num(u.reachAdmin)}</td>
       ${M.activity ? `<td class="num mono">${idleCell(u)}</td>` : ''}
+      ${M.ad ? `<td>${adCell(u)}</td>` : ''}
     </tr>` + (open ? detailRow(u) : '');
   }).join('');
 
@@ -720,6 +769,15 @@ function detailRow(u){
        Everything this account can see comes from the overrides below.</div>`;
 
   const extra = [];
+  if (M.ad) {
+    const a = u.ad;
+    extra.push('<h4>Directory</h4>' + (
+      u.adState === 'missing'
+        ? '<p class="none">No AD account carries this address. Confirm the person has left before removing access.</p>'
+        : `<p class="none">${esc(a.name || '')}${a.enabled ? '' : ' — account disabled'}`
+          + [a.title, a.dept, a.mgr ? 'reports to ' + a.mgr : '', a.last ? 'last AD sign-in ' + a.last : '']
+              .filter(Boolean).map(s => '<br>' + esc(s)).join('') + '</p>'));
+  }
   if (u.noop) extra.push(`<h4>No-op overrides (${u.noop})</h4><ul>${u.noopList.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`);
   if (u.stale) extra.push(`<h4>Stale overrides (${u.stale})</h4><ul>${u.staleList.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`);
 
@@ -770,6 +828,23 @@ function renderFolders(){
 
 function renderFindings(){
   const u = M.users, out = [];
+
+  if (M.ad) {
+    const gone = u.filter(x => x.adState === 'missing' && x.reach).sort((a,b) => b.reach - a.reach);
+    out.push(finding('high', 'Reaches forms with no Active Directory account',
+      'No AD account carries these addresses, which usually means the person has left the City. '
+      + 'Service accounts and contractors can land here too, so confirm each one, then remove it. '
+      + 'These need no warning email.',
+      gone, x => [x.email, x.tier, x.reach + ' forms', x.service ? 'looks like a service account' : 'looks like a person'],
+      ['Account','Tier','Reaches','Note']));
+
+    const off = u.filter(x => x.adState === 'disabled' && x.reach).sort((a,b) => b.reach - a.reach);
+    out.push(finding('high', 'Reaches forms while disabled in Active Directory',
+      'The directory account is disabled but the Cognito access is still live. Cognito signs in '
+      + 'against its own account list, so disabling someone in AD does not close this door.',
+      off, x => [x.display, x.email, x.reach + ' forms', x.ad.dept || '', x.ad.last || ''],
+      ['Account','Email','Reaches','Department','Last AD sign-in']));
+  }
 
   const orgWide = u.filter(x => x.orgWide).sort((a,b) => b.reach - a.reach);
   out.push(finding('high', 'Accounts that reach every form by tier',
@@ -1046,7 +1121,8 @@ function refreshDraft(){
   if (drop) drop.onclick = () => {
     off.forEach(u => selected.delete(u.email));
     render();
-    openMessageModal(t.id);
+    if (selected.size) openMessageModal(t.id);
+    else $('#msgModal').hidden = true;
   };
 
   $('#recipCount').textContent = users.length + (users.length === 1 ? ' account' : ' accounts') + ', on BCC';
@@ -1116,9 +1192,10 @@ function copyText(text){
 
 function bind(){
   $('#q').oninput = render;
-  ['#fGlobal','#fOverride','#fDenied','#fMfaOff','#fService','#fAccess','#fNever','#fIdle']
+  ['#fGlobal','#fOverride','#fDenied','#fMfaOff','#fService','#fAccess','#fNever','#fIdle','#fNoAd','#fAdOff']
     .forEach(s => $(s).onchange = render);
   if (M.activity) { $('#lblNever').hidden = false; $('#lblIdle').hidden = false; }
+  if (M.ad) { $('#lblNoAd').hidden = false; $('#lblAdOff').hidden = false; }
   document.querySelectorAll('.tier').forEach(c => c.onchange = render);
 
   document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => {
@@ -1139,7 +1216,8 @@ function bind(){
     const head = ['Account','Email','OrgTier','OrgWideByTier','MFA','Overrides','Denials',
                   'NoOpOverrides','StaleOverrides','FormsReachable','ReachableAsAdmin',
                   'LastSignIn','DaysSinceSignIn','SignIns','LastActivity','TotalEvents',
-                  'FolderOverrides','FormOverrides'];
+                  'FolderOverrides','FormOverrides']
+                 .concat(M.ad ? ['ADState','ADDepartment','ADTitle','ADManager','ADLastSignIn'] : []);
     const q = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
     const body = rows.map(u => [
       u.display, u.email, u.tier, u.orgWide ? 'yes' : 'no', u.mfa ? 'on' : 'off',
@@ -1148,7 +1226,9 @@ function bind(){
       u.logins || 0, u.lastActivity ? fmtDate(u.lastActivity) : 'never', u.events || 0,
       u.folderList.map(f => `${f.label} (${f.code})`).join('; '),
       u.formList.map(f => `${f.label} (${f.code})`).join('; ')
-    ].map(q).join(','));
+    ].concat(M.ad ? [u.adState, u.ad ? u.ad.dept : '', u.ad ? u.ad.title : '',
+                     u.ad ? u.ad.mgr : '', u.ad ? u.ad.last : ''] : [])
+     .map(q).join(','));
     const blob = new Blob(['\ufeff' + [head.map(q).join(','), ...body].join('\r\n')], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

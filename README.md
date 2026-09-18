@@ -125,6 +125,51 @@ Claude. These are OAuth connections, so each one runs as the account that connec
 it and reads whatever that account can read. The tile turns red when the count is
 above zero.
 
+## Cross-referencing Active Directory
+
+Cognito keeps its own account list. Disabling someone in AD does not close their
+Cognito access, and nothing in Cognito knows the person has left. So the most
+useful column in the report comes from outside Cognito entirely.
+
+`export-ad.ps1` reads the directory over ADSI, which needs no RSAT module and no
+special rights beyond a domain-joined session:
+
+```
+powershell -ExecutionPolicy Bypass -File .\export-ad.ps1
+```
+
+It writes two files. `ad-users.csv` is the full export, useful on its own.
+`ad-data.js` is the same data trimmed to the accounts that carry an email
+address, written as a script the report loads the same way it loads
+`audit-data.js`. Both are gitignored.
+
+Reload `report.html` and every account picks up a directory state.
+
+| State | Means |
+|---|---|
+| Active | Normal. Judge the account on its access. |
+| Disabled | Matched a disabled AD account. The person is gone, the access is not. |
+| Not in AD | No AD account carries that address. Usually separated. |
+
+Matching runs against `proxyAddresses` as well as the primary `mail` attribute,
+because a Cognito account often sits on an alias or an old domain. Without that,
+anyone who had been through a rename or a domain migration reads as "not in AD,"
+which is the state you act on most aggressively.
+
+"Not in AD" still deserves a look before you remove anything. Contractors,
+vendors, and shared mailboxes land there too, and so do service accounts, which
+is why the finding marks which rows look like people.
+
+Two findings come from this, both at the top of the list because they need no
+notice period: accounts reaching forms with no AD account, and accounts reaching
+forms while disabled in AD. Expanding any row shows the person's title,
+department, manager, and last directory sign-in, so you know who to ask when an
+account is ambiguous.
+
+It also changes who gets mail. Every message topic requires an active directory
+account, so selecting a group and picking a topic drops anyone who has left. You
+deprovision those instead.
+
 ## Sending a message
 
 Every row in the People view has a checkbox, and the one in the header takes
