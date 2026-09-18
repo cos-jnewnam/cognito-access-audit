@@ -125,6 +125,36 @@ Claude. These are OAuth connections, so each one runs as the account that connec
 it and reads whatever that account can read. The tile turns red when the count is
 above zero.
 
+## Sending a message
+
+Every row in the People view has a checkbox, and the one in the header takes
+everything matching the current filters. Pick a set and a `Send a message` button
+appears in the toolbar. The selection survives sorting and filter changes, so you
+can gather people across several passes.
+
+Four topics ship with it: no recorded sign-in, MFA off, idle 90+ days, and
+org-wide access review. Each fills in a subject and body you can edit before
+sending, plus a reply-by date that defaults to two weeks out. When some of the
+accounts you picked don't match the topic, the modal names them and offers to drop
+them, which is how service accounts stay out of mail meant for people.
+
+`Open in Outlook` writes an `.eml` file. Double-click it and Outlook opens a draft
+with the recipients on BCC, you on the To line, and the message already in place.
+Nothing sends until you click send. BCC rather than To, so a message about who got
+flagged doesn't publish that list to everyone on it. `Copy to clipboard` hands you
+the same three pieces as plain text for Outlook web.
+
+Every template reads as a notice with an opt-out rather than an accusation, and
+that is deliberate. Cognito appears to log a sign-in only on fresh authentication,
+so an account can be in active use without ever recording one. "Reply by this date
+if you still need it" is correct either way: if the data is wrong, the person
+corrects you, and if it's right, silence is the signal to deprovision.
+
+Templates live in `MESSAGE_TOPICS` near the top of the script in `report.html`.
+They're plain strings with `{date}`, `{count}`, `{org}`, and `{forms}` tokens, and
+`report.html` is static, so rewriting them survives every collection run. The To
+address is the `SENDER` constant just above them.
+
 ## Why "forms reachable" is the column to read
 
 Tier and override counts both mislead on their own.

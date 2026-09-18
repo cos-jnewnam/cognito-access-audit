@@ -109,6 +109,32 @@ tbody tr.open{background:#f2f7fb}
 .toolbar .count{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
 .empty{padding:60px 20px;text-align:center;color:var(--ink-soft)}
 
+th.chk,td.chk{width:30px;padding-right:0;cursor:default}
+td.chk input,th.chk input{cursor:pointer;margin:0}
+tbody tr.picked{background:#f2f7fb}
+.btn.go{background:var(--accent);color:#fff;border:1px solid var(--accent)}
+.btn.go:hover{background:#0f4364}
+
+.modal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(19,28,36,.45)}
+.modal[hidden]{display:none}
+.sheet{background:var(--surface);border:1px solid var(--line);width:min(660px,100%);max-height:88vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.3)}
+.sheet header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.sheet header h2{margin:0;font-size:16px;font-weight:600}
+.sheet .body{padding:16px 20px}
+.sheet .foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--line)}
+.sheet h3{font-size:12px;font-weight:600;color:var(--ink-soft);margin:0 0 8px}
+.sheet h3:not(:first-child){margin-top:18px}
+.topic{display:flex;gap:9px;align-items:flex-start;padding:7px 0;cursor:pointer}
+.topic input{margin-top:3px}
+.topic .t{font-weight:500}
+.topic .d{color:var(--ink-soft);font-size:12.5px}
+.warn-box{background:#faf3e9;border-left:3px solid var(--warn);padding:9px 12px;margin:12px 0;font-size:12.5px}
+.warn-box button{margin-top:6px}
+.sheet input[type=date],.sheet input[type=text]{padding:6px 8px;border:1px solid var(--line);font:inherit}
+.sheet textarea{width:100%;min-height:210px;padding:9px 11px;border:1px solid var(--line);font-family:var(--mono);font-size:12.5px;line-height:1.5;resize:vertical}
+.recips{font-family:var(--mono);font-size:12px;color:var(--ink-soft);max-height:78px;overflow:auto;border:1px solid var(--line-soft);padding:7px 9px;word-break:break-all}
+.said{font-family:var(--mono);font-size:12px;color:var(--calm)}
+
 @media print{
   body{background:#fff}
   aside,nav.tabs,.toolbar .btn,.spectrum{display:none}
@@ -196,6 +222,8 @@ tbody tr.open{background:#f2f7fb}
       <div class="toolbar">
         <span class="count" id="shown">—</span>
         <span>
+          <button class="btn go" id="msg" hidden>Send a message</button>
+          <button class="btn ghost" id="clearSel" hidden>Clear selection</button>
           <button class="btn ghost" id="expandAll">Expand all</button>
           <button class="btn ghost" id="csv">Download CSV</button>
         </span>
@@ -203,6 +231,39 @@ tbody tr.open{background:#f2f7fb}
       <div id="view"></div>
     </section>
   </main>
+</div>
+
+<div class="modal" id="msgModal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="msgTitle">
+    <header>
+      <h2 id="msgTitle">Send a message</h2>
+      <button class="btn ghost" id="msgClose">Close</button>
+    </header>
+    <div class="body">
+      <h3>Topic</h3>
+      <div id="topicList"></div>
+      <div id="topicWarn"></div>
+
+      <h3>Reply-by date</h3>
+      <input type="date" id="msgDate">
+
+      <h3>Recipients <span id="recipCount" class="sub"></span></h3>
+      <div class="recips" id="recipList"></div>
+
+      <h3>Subject</h3>
+      <input type="text" id="msgSubject" style="width:100%">
+
+      <h3>Message</h3>
+      <textarea id="msgBody" spellcheck="true"></textarea>
+    </div>
+    <div class="foot">
+      <span class="said" id="msgSaid"></span>
+      <span>
+        <button class="btn ghost" id="msgCopy">Copy to clipboard</button>
+        <button class="btn go" id="msgOpen">Open in Outlook</button>
+      </span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -393,6 +454,87 @@ function drawSpectrum(){
   ).join('');
 }
 
+const SENDER = 'jnewnam@scottsdaleaz.gov';
+const SIGNOFF = `
+
+Regards,
+
+Jared L Newnam, MSIST
+Web Services Engineer | City of Scottsdale
+Web & Design Services
+Cognito Forms Steward`;
+
+/* Message templates. Plain strings, safe to rewrite without touching anything else.
+   Tokens: {date} reply-by date, {count} recipients, {org} org name, {forms} active form count.
+   `applies` decides whether a selected account belongs on the topic. */
+const MESSAGE_TOPICS = [
+  {
+    id: 'signin',
+    label: 'No recorded sign-in',
+    note: 'Notice before deprovisioning, with an opt-out.',
+    needsActivity: true,
+    applies: u => !u.logins && !u.service,
+    subject: 'Cognito Forms access review - reply by {date} if you still need your account',
+    body: `I am reviewing Cognito Forms accounts for the City and removing access that is not being used.
+
+My records show no sign-in activity on your account. If that is wrong, or if you still need Cognito Forms, reply to this message by {date} and I will leave your account in place.
+
+If I do not hear from you by then, I will remove the account. Nothing you have submitted goes away, and I can restore access later if you need it again.` + SIGNOFF
+  },
+  {
+    id: 'mfa',
+    label: 'MFA off',
+    note: 'Ask to enable a second factor, with a deadline.',
+    applies: u => !u.mfa && !u.service,
+    subject: 'Turn on multi-factor authentication for Cognito Forms by {date}',
+    body: `Your Cognito Forms account can reach live forms and does not have multi-factor authentication turned on. Form entries include resident-submitted information, so an account without a second factor is a real exposure.
+
+Please turn MFA on by {date}:
+
+  1. Sign in at https://www.cognitoforms.com
+  2. Open your account settings
+  3. Turn on multi-factor authentication and follow the prompts
+
+Reply if you run into trouble and I will walk through it with you.` + SIGNOFF
+  },
+  {
+    id: 'idle',
+    label: 'Idle 90+ days',
+    note: 'Confirm the account is still needed.',
+    needsActivity: true,
+    applies: u => u.idle != null && u.idle >= 90 && !u.service,
+    subject: 'Do you still need Cognito Forms access? Reply by {date}',
+    body: `I am reviewing Cognito Forms accounts for the City. Yours has not been used in at least 90 days.
+
+If you still need it, reply by {date} and I will leave it in place. If I do not hear from you, I will remove the access after that date. It takes a minute to restore if you need it again later.` + SIGNOFF
+  },
+  {
+    id: 'tier',
+    label: 'Org-wide access review',
+    note: 'For Administrator and Owner accounts that reach every form.',
+    applies: u => u.orgWide,
+    subject: 'Reducing your Cognito Forms access to the forms you work on',
+    body: `Your Cognito Forms account is set to Administrator or Owner, which reaches all {forms} active forms in the City's account. That is broader than almost anyone needs, and it is not visible on the users screen, so most people are not aware of it.
+
+I am moving these accounts down to access on the specific folders and forms each person actually works on.
+
+Reply by {date} with the forms or folders you need and I will set them up before I make the change. If you do administer Cognito Forms for your department, say so and I will leave your account as it is.` + SIGNOFF
+  }
+];
+
+const selected = new Set();
+
+function selectedUsers(){
+  return M.users.filter(u => selected.has(u.email));
+}
+
+function updateSelectionUi(){
+  const n = selected.size;
+  $('#msg').hidden = tab !== 'people' || !n;
+  $('#clearSel').hidden = tab !== 'people' || !n;
+  $('#msg').textContent = n ? `Send a message (${n})` : 'Send a message';
+}
+
 const TILE_DEFS = {
   'Accounts': 'Every account on the roster, whatever its tier or reach.',
   'Org-wide by tier': 'Administrator and Owner accounts. Each reaches every active form with no grant recorded. Only a denial takes anything away.',
@@ -465,7 +607,10 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') unpinTiles();
+  if (e.key !== 'Escape') return;
+  unpinTiles();
+  const modal = document.getElementById('msgModal');
+  if (modal) modal.hidden = true;
 });
 
 /* ---------- filtering ---------- */
@@ -502,6 +647,7 @@ function render(){
   else if (tab === 'folders') renderFolders();
   else if (tab === 'activity') renderActivity();
   else renderFindings();
+  updateSelectionUi();
 }
 
 function cols(){
@@ -534,12 +680,18 @@ function renderPeople(){
   if (!rows.length){ $('#view').innerHTML = '<div class="empty">Nothing matches those filters.</div>'; return; }
 
   const C = cols();
-  const head = C.map(([k,label,cls]) =>
+  const allPicked = rows.every(u => selected.has(u.email));
+  const head = `<th class="chk"><input type="checkbox" id="pickAll" ${allPicked ? 'checked' : ''}
+      title="Select everything matching the current filters" aria-label="Select all shown"></th>`
+    + C.map(([k,label,cls]) =>
     `<th class="${cls}" data-sort="${k}">${label}${sortKey===k?` <span class="dir">${sortDir<0?'▼':'▲'}</span>`:''}</th>`).join('');
 
   const body = rows.map(u => {
     const open = openRows.has(u.email);
-    return `<tr class="row ${open?'open':''}" data-email="${esc(u.email)}">
+    const picked = selected.has(u.email);
+    return `<tr class="row ${open?'open':''} ${picked?'picked':''}" data-email="${esc(u.email)}">
+      <td class="chk"><input type="checkbox" class="pick" ${picked ? 'checked' : ''}
+          aria-label="Select ${esc(u.display)}"></td>
       <td><div class="name">${esc(u.display)}${u.service?' <span class="pill svc">service</span>':''}</div>
           <div class="sub mono">${esc(u.email)}</div></td>
       <td>${esc(u.tier)}${u.orgWide?' <span class="pill tier">org-wide</span>':''}</td>
@@ -571,7 +723,7 @@ function detailRow(u){
   if (u.noop) extra.push(`<h4>No-op overrides (${u.noop})</h4><ul>${u.noopList.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`);
   if (u.stale) extra.push(`<h4>Stale overrides (${u.stale})</h4><ul>${u.staleList.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`);
 
-  return `<tr class="detail"><td colspan="${cols().length}">
+  return `<tr class="detail"><td colspan="${cols().length + 1}">
     ${base}
     <h4>Folder overrides (${u.folderList.length})</h4>${list(u.folderList,'None.')}
     <h4>Form overrides (${u.formList.length})</h4>${list(u.formList,'None.')}
@@ -847,6 +999,119 @@ function wireTable(){
     openRows.has(e) ? openRows.delete(e) : openRows.add(e);
     render();
   });
+
+  const all = $('#pickAll');
+  if (all) all.onclick = e => {
+    e.stopPropagation();
+    const rows = filtered();
+    if (all.checked) rows.forEach(u => selected.add(u.email));
+    else rows.forEach(u => selected.delete(u.email));
+    render();
+  };
+  document.querySelectorAll('td.chk .pick').forEach(box => box.onclick = e => {
+    e.stopPropagation();
+    const email = box.closest('tr').dataset.email;
+    box.checked ? selected.add(email) : selected.delete(email);
+    render();
+  });
+}
+
+/* ---------- messages ---------- */
+function topicById(id){ return MESSAGE_TOPICS.find(t => t.id === id); }
+
+function fillToken(s, recipients){
+  const d = $('#msgDate').value;
+  const nice = d ? new Date(d + 'T12:00:00').toLocaleDateString(undefined,
+    { weekday: 'long', month: 'long', day: 'numeric' }) : '[date]';
+  return s.replace(/\{date\}/g, nice)
+          .replace(/\{count\}/g, recipients.length)
+          .replace(/\{org\}/g, D.org)
+          .replace(/\{forms\}/g, M.formCount);
+}
+
+function refreshDraft(){
+  const t = topicById(document.querySelector('input[name=topic]:checked').value);
+  const users = selectedUsers();
+  $('#msgSubject').value = fillToken(t.subject, users);
+  $('#msgBody').value = fillToken(t.body, users);
+  $('#msgSaid').textContent = '';
+
+  const off = users.filter(u => !t.applies(u));
+  $('#topicWarn').innerHTML = off.length
+    ? `<div class="warn-box">${off.length} of ${users.length} selected accounts do not match this topic:
+       <br>${esc(off.slice(0,6).map(u => u.email).join('; '))}${off.length > 6 ? '; and ' + (off.length - 6) + ' more' : ''}
+       <br><button class="btn ghost" id="dropOff">Remove them from the selection</button></div>`
+    : '';
+  const drop = $('#dropOff');
+  if (drop) drop.onclick = () => {
+    off.forEach(u => selected.delete(u.email));
+    render();
+    openMessageModal(t.id);
+  };
+
+  $('#recipCount').textContent = users.length + (users.length === 1 ? ' account' : ' accounts') + ', on BCC';
+  $('#recipList').textContent = users.map(u => u.email).join('; ');
+}
+
+function openMessageModal(keepTopic){
+  const users = selectedUsers();
+  if (!users.length) return;
+
+  $('#topicList').innerHTML = MESSAGE_TOPICS
+    .filter(t => !t.needsActivity || M.activity)
+    .map((t, i) => `<label class="topic">
+      <input type="radio" name="topic" value="${t.id}" ${(keepTopic ? t.id === keepTopic : i === 0) ? 'checked' : ''}>
+      <span><span class="t">${esc(t.label)}</span><br><span class="d">${esc(t.note)}</span></span>
+    </label>`).join('');
+
+  if (!$('#msgDate').value) {
+    const d = new Date(M.now + 14 * 86400000);
+    $('#msgDate').value = d.toISOString().slice(0, 10);
+  }
+  document.querySelectorAll('input[name=topic]').forEach(r => r.onchange = refreshDraft);
+  $('#msgDate').onchange = refreshDraft;
+  refreshDraft();
+  $('#msgModal').hidden = false;
+  $('#msgClose').focus();
+}
+
+// An .eml carrying X-Unsent opens in Outlook as an editable draft rather than a received message.
+function buildEml(subject, body, recipients){
+  const clean = s => String(s).replace(/[\r\n]+/g, ' ');
+  return [
+    'To: ' + SENDER,
+    'Bcc: ' + recipients.join(', '),
+    'Subject: ' + clean(subject),
+    'X-Unsent: 1',
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    body
+  ].join('\n').replace(/\r?\n/g, '\r\n');
+}
+
+function download(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+}
+
+function copyText(text){
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (!ok) throw new Error('copy blocked');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).catch(fallback);
+  }
+  return Promise.resolve().then(fallback);
 }
 
 function bind(){
@@ -897,6 +1162,29 @@ function bind(){
     if (t) { $('#q').value = t.split(' — ')[0]; tab = 'people';
       document.querySelectorAll('nav.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.tab === 'people'));
       render(); }
+  };
+
+  $('#msg').onclick = () => openMessageModal();
+  $('#clearSel').onclick = () => { selected.clear(); render(); };
+  $('#msgClose').onclick = () => { $('#msgModal').hidden = true; };
+  $('#msgModal').onclick = e => { if (e.target === $('#msgModal')) $('#msgModal').hidden = true; };
+
+  $('#msgOpen').onclick = () => {
+    const users = selectedUsers();
+    if (!users.length) return;
+    const eml = buildEml($('#msgSubject').value, $('#msgBody').value, users.map(u => u.email));
+    const id = document.querySelector('input[name=topic]:checked').value;
+    download(new Blob([eml], { type: 'message/rfc822' }),
+             `cognito-${id}-${new Date().toISOString().slice(0,10)}.eml`);
+    $('#msgSaid').textContent = 'Draft saved. Open the .eml to compose it in Outlook.';
+  };
+
+  $('#msgCopy').onclick = () => {
+    const users = selectedUsers();
+    copyText(['BCC: ' + users.map(u => u.email).join('; '),
+              'Subject: ' + $('#msgSubject').value, '', $('#msgBody').value].join('\n'))
+      .then(() => { $('#msgSaid').textContent = 'Copied.'; })
+      .catch(() => { $('#msgSaid').textContent = 'Copy blocked. Select the text and copy it by hand.'; });
   };
 
   $('#swap').onclick = () => {

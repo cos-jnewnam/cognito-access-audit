@@ -3,6 +3,9 @@ audit-data.js
 audit-data.json
 *.csv
 
+# Message drafts carry recipient addresses.
+*.eml
+
 # Playwright session profile
 .browser-profile/
 
