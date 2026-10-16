@@ -492,14 +492,14 @@ Cognito Forms Steward`;
 
 /* Message templates. Plain strings, safe to rewrite without touching anything else.
    Tokens: {date} reply-by date, {count} recipients, {org} org name, {forms} active form count.
-   `applies` decides whether a selected account belongs on the topic. */
+   `applies` is the topic rule only. Who is mailable at all is decided by excludeReason. */
 const MESSAGE_TOPICS = [
   {
     id: 'signin',
     label: 'No recorded sign-in',
     note: 'Notice before deprovisioning, with an opt-out.',
     needsActivity: true,
-    applies: u => !u.logins && !u.service && stillHere(u),
+    applies: u => !u.logins,
     subject: 'Cognito Forms access review - reply by {date} if you still need your account',
     body: `I am reviewing Cognito Forms accounts for the City and removing access that is not being used.
 
@@ -511,7 +511,7 @@ If I do not hear from you by then, I will remove the account. Nothing you have s
     id: 'mfa',
     label: 'MFA off',
     note: 'Ask to enable a second factor, with a deadline.',
-    applies: u => !u.mfa && !u.service && stillHere(u),
+    applies: u => !u.mfa,
     subject: 'Turn on multi-factor authentication for Cognito Forms by {date}',
     body: `Your Cognito Forms account can reach live forms and does not have multi-factor authentication turned on. Form entries include resident-submitted information, so an account without a second factor is a real exposure.
 
@@ -528,7 +528,7 @@ Reply if you run into trouble and I will walk through it with you.` + SIGNOFF
     label: 'Idle 90+ days',
     note: 'Confirm the account is still needed.',
     needsActivity: true,
-    applies: u => u.idle != null && u.idle >= 90 && !u.service && stillHere(u),
+    applies: u => u.idle != null && u.idle >= 90,
     subject: 'Do you still need Cognito Forms access? Reply by {date}',
     body: `I am reviewing Cognito Forms accounts for the City. Yours has not been used in at least 90 days.
 
@@ -538,7 +538,7 @@ If you still need it, reply by {date} and I will leave it in place. If I do not 
     id: 'tier',
     label: 'Org-wide access review',
     note: 'For Administrator and Owner accounts that reach every form.',
-    applies: u => u.orgWide && stillHere(u),
+    applies: u => u.orgWide,
     subject: 'Reducing your Cognito Forms access to the forms you work on',
     body: `Your Cognito Forms account is set to Administrator or Owner, which reaches all {forms} active forms in the City's account. That is broader than almost anyone needs, and it is not visible on the users screen, so most people are not aware of it.
 
@@ -550,8 +550,14 @@ Reply by {date} with the forms or folders you need and I will set them up before
 
 const selected = new Set();
 
+// Why an account should stay off a draft. Null means it belongs there.
 // Someone who has left the City gets deprovisioned, not emailed.
-const stillHere = u => !M.ad || u.adState === 'active';
+function excludeReason(u, t){
+  if (M.ad && u.adState === 'disabled') return 'disabled in AD';
+  if (M.ad && u.adState === 'missing') return 'no AD account';
+  if (u.service) return 'service account';
+  return t.applies(u) ? null : 'does not match this topic';
+}
 
 function selectedUsers(){
   return M.users.filter(u => selected.has(u.email));
@@ -1111,15 +1117,22 @@ function refreshDraft(){
   $('#msgBody').value = fillToken(t.body, users);
   $('#msgSaid').textContent = '';
 
-  const off = users.filter(u => !t.applies(u));
+  const off = users.map(u => [u, excludeReason(u, t)]).filter(([, r]) => r);
+  const byReason = new Map();
+  off.forEach(([u, r]) => {
+    if (!byReason.has(r)) byReason.set(r, []);
+    byReason.get(r).push(u);
+  });
   $('#topicWarn').innerHTML = off.length
-    ? `<div class="warn-box">${off.length} of ${users.length} selected accounts do not match this topic:
-       <br>${esc(off.slice(0,6).map(u => u.email).join('; '))}${off.length > 6 ? '; and ' + (off.length - 6) + ' more' : ''}
+    ? `<div class="warn-box">Leaving ${off.length} of ${users.length} selected accounts off this message:
+       ${[...byReason].map(([r, list]) => `<br><b>${esc(r)}</b> &mdash; `
+          + esc(list.slice(0,5).map(u => u.email).join('; '))
+          + (list.length > 5 ? '; and ' + (list.length - 5) + ' more' : '')).join('')}
        <br><button class="btn ghost" id="dropOff">Remove them from the selection</button></div>`
     : '';
   const drop = $('#dropOff');
   if (drop) drop.onclick = () => {
-    off.forEach(u => selected.delete(u.email));
+    off.forEach(([u]) => selected.delete(u.email));
     render();
     if (selected.size) openMessageModal(t.id);
     else $('#msgModal').hidden = true;
